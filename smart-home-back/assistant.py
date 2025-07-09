@@ -1,5 +1,4 @@
 # assistant.py
-
 import os
 from dotenv import load_dotenv
 from together import Together
@@ -51,13 +50,18 @@ def execute_tool_call(tool_call: dict) -> str:
     This function acts as the bridge between the LLM's suggestion and actual device/data control.
     """
     function_name = tool_call["function"]["name"]
-    function_args = tool_call["function"]["arguments"]
+    function_args = json.loads(tool_call["function"]["arguments"])
 
     print(f"\n--- Executing Tool Call: {function_name} with arguments: {json.dumps(function_args)} ---")
 
     # --- Device Functions ---
     device_obj = None
-    location = function_args.get("location")  # Location is common for device functions
+    location = function_args.get("location")  # Extract location from LLM's arguments
+
+    # Common arguments for device functions that need to be removed before calling method
+    # because the actual Python methods (e.g., Lamp.turn_on()) don't take 'location' as argument.
+    # The 'location' is used to select the device object itself.
+    filtered_device_args = {k: v for k, v in function_args.items() if k != 'location'}
 
     if function_name.startswith("turn_on_lamp") or function_name.startswith("turn_off_lamp") or \
             function_name.startswith("get_lamp_status"):
@@ -65,13 +69,11 @@ def execute_tool_call(tool_call: dict) -> str:
             device_obj = home_devices["lamps"][location]
             method_name = function_name.replace("_lamp", "")  # e.g., "turn_on_lamp" -> "turn_on"
             method = getattr(device_obj, method_name)
-            if 'location' in function_args:
-                del function_args['location']
-            result = method(**function_args)
+            result = method(**filtered_device_args)  # Pass filtered arguments
             print(f"--- Device Execution Result: {result} ---")
             return result
         else:
-            return f"Error: Lamp not found at location '{location}'."
+            return f"Error: Lamp not found at location '{location}'. Please specify a valid location like Kitchen, Bathroom, Room 1, or Room 2."
 
     elif function_name.startswith("turn_on_ac") or function_name.startswith("turn_off_ac") or \
             function_name.startswith("set_ac_temperature") or function_name.startswith("get_ac_status") or \
@@ -80,132 +82,120 @@ def execute_tool_call(tool_call: dict) -> str:
             device_obj = home_devices["ac_units"][location]
             method_name = function_name.replace("_ac", "")
             method = getattr(device_obj, method_name)
-            if 'location' in function_args:
-                del function_args['location']
-            result = method(**function_args)
+            result = method(**filtered_device_args)  # Pass filtered arguments
             print(f"--- Device Execution Result: {result} ---")
             return result
         else:
-            return f"Error: AC unit not found at location '{location}'."
-
+            return f"Error: AC unit not found at location '{location}'. Please specify a valid location like Room 1 or Kitchen."
     elif function_name.startswith("turn_on_tv") or function_name.startswith("turn_off_tv") or \
-            function_name.startswith("change_tv_channel") or function_name.startswith("mute_tv") or \
-            function_name.startswith("unmute_tv") or function_name.startswith("get_tv_status") or \
-            function_name.startswith("get_tv_channel"):
+             function_name.startswith("change_tv_channel") or function_name.startswith("mute_tv") or \
+             function_name.startswith("unmute_tv") or function_name.startswith("get_tv_status") or \
+             function_name.startswith("get_tv_channel"):
         # TV has only one instance, its location is fixed as 'living room'
         device_obj = home_devices["televisions"]["living room"]
         if location and location != "living room":
-            return f"Error: TV is only in the living room, cannot control TV at '{location}'."
+            return f"Error: TV is only in the living room, cannot control TV at '{location}'. Please specify 'living room'."
 
         method_name = function_name.replace("_tv", "")
         method = getattr(device_obj, method_name)
-        if 'location' in function_args:
-                del function_args['location']
-        result = method(**function_args)
+        result = method(**filtered_device_args)  # Pass filtered arguments
         print(f"--- Device Execution Result: {result} ---")
         return result
 
-    # --- Data Connector Functions ---
+        # --- Data Connector Functions ---
+        # These functions (weather, news, date/time) generally expect all arguments
+        # provided by the LLM, so no filtering needed here.
     elif function_name == "get_current_weather":
         result = get_current_weather(location=function_args.get("location"))
         print(f"--- Data Connector Result: {result} ---")
         return result
     elif function_name == "get_latest_news":
-        query = function_args.get("query", "general")  # Default to "general" if LLM doesn't provide query
-        language = function_args.get("language", "en")  # Default to "en" if LLM doesn't provide language
+        query = function_args.get("query", "general")
+        language = function_args.get("language", "en")
         result = get_latest_news(query=query, language=language)
         print(f"--- Data Connector Result: {result} ---")
-        if 'location' in function_args:
-                del function_args['location']
         return result
     elif function_name == "get_current_date_time":
         result = get_current_date_time()
         print(f"--- Data Connector Result: {result} ---")
         return result
 
-    # If no matching function is found
+        # If no matching function is found
     return f"Error: Unknown function or unsupported command: {function_name}"
 
-
 def chat_with_assistant(user_message: str):
-    """
-    Main function to interact with the Smart Home Assistant.
-    Processes user messages, interacts with LLM, executes tools, and returns a response.
-    """
-    messages = [
-        {"role": "system",
-         "content": "You are a helpful smart home assistant. Control home devices and answer questions about them. Use the provided tools when necessary. Always provide a natural language response."},
-        {"role": "user", "content": user_message}
-    ]
+        """
+        Main function to interact with the Smart Home Assistant.
+        Processes user messages, interacts with LLM, executes tools, and returns a response.
+        """
+        messages = [
+            {"role": "system", "content": """You are a helpful and precise smart home assistant.
+        Your main task is to control smart home devices (lamps, AC units, TV) and answer questions about them.
+        You can also provide real-time weather information, the latest news, and the current date and time.
+        Controllable devices list:
+        - Lamps: Kitchen, Bathroom, Room 1, Room 2
+        - AC Units: Room 1, Kitchen
+        - Television: Living Room
 
-    try:
-        response = client.chat.completions.create(
-            model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",  # Using 8B model for faster local testing. Change to 70B if preferred.
-            messages=messages,
-            tools=TOOLS,  # Provide the list of available tools
-            tool_choice="auto"  # Let the LLM decide if it needs to use a tool
-        )
+        You are multilingual and can understand and respond in English and Persian (Farsi). Always use the language the user is speaking in your response.
+        Never attempt to control or simulate devices or functions that are not explicitly defined in your provided tools.
+        If a device or function outside your capabilities is requested, explicitly inform the user that you do not have that capability or the device does not exist.
+        If you need more information (such as location or other parameters) to perform an action, always ask the user clear and specific questions.
+        Use the provided tools when necessary, and always provide a natural language response."""},
+            {"role": "user", "content": user_message}
+        ]
 
-        # Check if the LLM decided to call a tool
-        if response.choices[0].message.tool_calls:
-            tool_calls = response.choices[0].message.tool_calls
-
-            # Append the tool call message from the LLM to the conversation history
-            messages.append(response.choices[0].message)
-
-            # Execute each tool call proposed by the LLM
-            # For simplicity, we process them sequentially. In complex agents, this might be parallel.
-            tool_outputs = []
-            for tool_call in tool_calls:
-                if isinstance(tool_call, str):
-                    tool_call_data = json.loads(tool_call)
-                elif hasattr(tool_call, "model_dump"):
-                    tool_call_data = tool_call.model_dump()
-                else:
-                    tool_call_data = tool_call  # فرض بر این که دیکشنری است
-                function = tool_call_data.get("function", {})
-                arguments_str = function.get("arguments", "{}")
-                arguments_dict = json.loads(arguments_str)  # اینجا تبدیل رشته به دیکشنری
-
-                # حالا می‌توانی داده‌ها را برای اجرا آماده کنی
-                tool_call_data["function"]["arguments"] = arguments_dict
-
-                print(f"--- Executing Tool Call: {function.get('name')} with arguments: {arguments_dict} ---")
-
-                tool_output = execute_tool_call(tool_call_data)
-                # tool_output = execute_tool_call(tool_call.model_dump())
-                tool_outputs.append({
-                    "role": "tool",
-                    "content": tool_output,
-                    "tool_call_id": tool_call.id
-                })
-
-            # Append the tool outputs to the conversation history
-            messages.extend(tool_outputs)
-
-            # Send the messages again with the tool output(s) to get the final response from LLM
-            final_response = client.chat.completions.create(
-                model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",  # Use the same model
-                messages=messages
+        try:
+            response = client.chat.completions.create(
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",  # Using 8B model for faster local testing. Change to 70B if preferred.
+                messages=messages,
+                tools=TOOLS,  # Provide the list of available tools
+                tool_choice="auto"  # Let the LLM decide if it needs to use a tool
             )
-            return final_response.choices[0].message.content
-        else:
-            # If no tool call, LLM provides a direct text response
-            return response.choices[0].message.content
 
-    except Exception as e:
-        print(f"An error occurred in chat_with_assistant: {e}")
-        return f"An error occurred while processing your request: {e}. Please try again."
+            # Check if the LLM decided to call a tool
+            if response.choices[0].message.tool_calls:
+                tool_calls = response.choices[0].message.tool_calls
+
+                # Append the tool call message from the LLM to the conversation history
+                messages.append(response.choices[0].message)
+                # Execute each tool call proposed by the LLM
+                # For simplicity, we process them sequentially. In complex agents, this might be parallel.
+                tool_outputs = []
+                for tool_call in tool_calls:
+                    tool_output = execute_tool_call(tool_call.model_dump())
+                    tool_outputs.append({
+                        "role": "tool",
+                        "content": tool_output,
+                        "tool_call_id": tool_call.id
+                    })
+
+                # Append the tool outputs to the conversation history
+                messages.extend(tool_outputs)
+
+                # Send the messages again with the tool output(s) to get the final response from LLM
+                final_response = client.chat.completions.create(
+                    model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",  # Use the same model
+                    messages=messages
+                )
+                return final_response.choices[0].message.content
+            else:
+                # If no tool call, LLM provides a direct text response
+                return response.choices[0].message.content
+
+        except Exception as e:
+            print(f"An error occurred in chat_with_assistant: {e}")
+            return f"An error occurred while processing your request: {e}. Please try again."
 
 
-# --- Interactive CLI for testing (only runs when assistant.py is executed directly) ---
-if __name__ == "__main__":
-    print("به دستیار خانه هوشمند خوش آمدید. دستورات خود را تایپ کنید. برای خروج 'exit' را تایپ کنید.")
-
-    while True:
-        user_input = input("شما: ")
-        if user_input.lower() == 'exit':
-            break
-
-        response = chat_with_assistant(user_input)
-        print(f"دستیار: {response}")
+# # --- Interactive CLI for testing (only runs when assistant.py is executed directly) ---
+# if name == "main":
+#     print("به دستیار خانه هوشمند خوش آمدید. دستورات خود را تایپ کنید. برای خروج 'exit' را تایپ کنید.")
+#
+#     while True:
+#         user_input = input("شما: ")
+#         if user_input.lower() == 'exit':
+#             break
+#
+#         response = chat_with_assistant(user_input)
+#         print(f"دستیار: {response}")
