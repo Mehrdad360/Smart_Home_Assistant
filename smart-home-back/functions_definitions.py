@@ -2,7 +2,6 @@
 
 
 TOOLS = [
-    # Lamp functions
     {
         "type": "function",
         "function": {
@@ -57,7 +56,6 @@ TOOLS = [
             }
         }
     },
-    # AC Unit functions
     {
         "type": "function",
         "function": {
@@ -154,7 +152,6 @@ TOOLS = [
             }
         }
     },
-    # Television functions
     {
         "type": "function",
         "function": {
@@ -287,7 +284,6 @@ TOOLS = [
             }
         }
     },
-# Data Source Connector functions
     {
         "type": "function",
         "function": {
@@ -323,7 +319,7 @@ TOOLS = [
                         "description": "The language of the news. Default is 'en' (English). Examples: 'en' for English, 'fa' for Persian."
                     }
                 },
-                "required": ["query"] # Query is required. Language is optional.
+                "required": ["query"]
             }
         }
     },
@@ -334,7 +330,7 @@ TOOLS = [
             "description": "Returns the current date and time. Example: 'What time is it?' or 'What's the date today?'",
             "parameters": {
                 "type": "object",
-                "properties": {}, # No parameters needed for this function
+                "properties": {}, 
                 "required": []
             }
         }

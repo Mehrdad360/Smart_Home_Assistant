@@ -1,7 +1,7 @@
 
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # To handle Cross-Origin Resource Sharing
+from flask_cors import CORS  
 import os
 import sys
 
@@ -36,7 +36,6 @@ def chat():
 
 @app.route('/')
 def home():
-    """Basic home route to confirm API is running."""
     return "Smart Home Assistant Backend is running!"
 
 

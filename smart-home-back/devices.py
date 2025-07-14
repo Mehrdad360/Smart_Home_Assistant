@@ -146,30 +146,3 @@ class Television:
 
     def get_location(self) -> str:
         return self.location
-
-# A central dictionary to store all device instances
-# This will be populated when the main application starts
-# Example usage (for testing purposes, run this part in a separate test file or in main.py temporarily):
-# if __name__ == "__main__":
-#    kitchen_lamp = Lamp("Kitchen")
-#     kitchen_lamp.turn_on()
-#     print(kitchen_lamp.get_status())
-#     kitchen_lamp.turn_off()
-#     print(kitchen_lamp.get_status())
-
-#     room1_ac = ACUnit("Room 1")
-#     room1_ac.turn_on()
-#     room1_ac.set_temperature(20)
-#     print(room1_ac.get_status())
-#     room1_ac.set_temperature(10) # Out of range
-#     room1_ac.turn_off()
-#     print(room1_ac.get_status())
-
-#     living_room_tv = Television("Living Room")
-#     living_room_tv.turn_on()
-#     living_room_tv.change_channel(5)
-#     living_room_tv.mute()
-#     print(living_room_tv.get_status())
-#     living_room_tv.unmute()
-#     print(living_room_tv.get_status())
-#     living_room_tv.turn_off()
